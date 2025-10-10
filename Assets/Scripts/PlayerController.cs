@@ -10,16 +10,17 @@ public class PlayerController : MonoBehaviour
     public float gamepadCursorSpeed = 1200f;
 
     [Range(0f, 1f)]
+    [Tooltip("Dead zone for stick movement.")]
     public float stickDeadZone = 0.15f;
 
-    [Tooltip("If true, any mouse movement snaps the cursor to the mouse position.")]
+    [Tooltip("If true, mouse motion snaps cursor immediately to mouse position.")]
     public bool snapToMouseWhenMoved = true;
 
     [Header("Cursor Sprites")]
     [Tooltip("Default sprite when not hovering over anything.")]
     public Sprite normalSprite;
 
-    [Tooltip("Sprite shown when hovering over a hittable object.")]
+    [Tooltip("Sprite shown when hovering over hittable object.")]
     public Sprite hoverSprite;
 
     private Camera cam;
@@ -29,8 +30,10 @@ public class PlayerController : MonoBehaviour
     private float camToCursorPlaneZ;
     private SpriteRenderer spriteRenderer;
 
-    // Currently hovered hittable target
     private Hittable currentHover;
+    private bool usingMouse;
+
+    // ─────────────────────────────────────────────
 
     void Awake()
     {
@@ -39,76 +42,87 @@ public class PlayerController : MonoBehaviour
         spriteRenderer = GetComponent<SpriteRenderer>();
 
         if (cam == null)
-            Debug.LogError("No Camera.main found. Assign a main camera.");
+            Debug.LogError("No Camera.main found. Assign one.");
         if (playerInput == null)
-            Debug.LogError("PlayerInput component required on the same GameObject.");
+            Debug.LogError("PlayerInput component required on same GameObject.");
     }
 
     void OnEnable()
     {
         lookAction = playerInput.actions["Look"];
 
+        // Initialize virtual cursor position
         if (Mouse.current != null)
             virtualCursorScreen = Mouse.current.position.ReadValue();
         else
-        {
-            Vector3 startScreen = cam.WorldToScreenPoint(transform.position);
-            virtualCursorScreen = new Vector2(startScreen.x, startScreen.y);
-        }
+            virtualCursorScreen = new Vector2(Screen.width / 2f, Screen.height / 2f);
 
         camToCursorPlaneZ = Mathf.Abs(transform.position.z - cam.transform.position.z);
         if (camToCursorPlaneZ <= 0.0001f)
             camToCursorPlaneZ = 0.0001f;
+
+        // Hide system cursor
+        Cursor.visible = false;
+        Cursor.lockState = CursorLockMode.Confined;
     }
 
     void Update()
     {
+        UpdateInputMode();
         UpdateCursorPosition();
         CheckHoverTarget();
     }
 
+    // ─────────────────────────────────────────────
+    // Detect if player is using mouse or gamepad
+
+    private void UpdateInputMode()
+    {
+        bool mouseMoved = Mouse.current != null && Mouse.current.delta.ReadValue() != Vector2.zero;
+        bool stickUsed = Gamepad.current != null && lookAction.ReadValue<Vector2>().sqrMagnitude > 0.01f;
+
+        if (mouseMoved) usingMouse = true;
+        if (stickUsed) usingMouse = false;
+    }
+
+    // ─────────────────────────────────────────────
+    // Move cursor sprite based on active input type
+
     private void UpdateCursorPosition()
     {
-        bool mousePresent = Mouse.current != null;
-        bool mouseMoved = mousePresent && Mouse.current.delta.ReadValue() != Vector2.zero;
-
-        if (mousePresent && (mouseMoved || !GamepadPresent()))
+        if (usingMouse && Mouse.current != null)
         {
             if (snapToMouseWhenMoved)
                 virtualCursorScreen = Mouse.current.position.ReadValue();
         }
-        else
+        else if (Gamepad.current != null)
         {
             Vector2 stick = lookAction.ReadValue<Vector2>();
             if (stick.sqrMagnitude > stickDeadZone * stickDeadZone)
                 virtualCursorScreen += stick * gamepadCursorSpeed * Time.deltaTime;
         }
 
+        // Clamp to screen bounds
         virtualCursorScreen.x = Mathf.Clamp(virtualCursorScreen.x, 0f, Screen.width);
         virtualCursorScreen.y = Mathf.Clamp(virtualCursorScreen.y, 0f, Screen.height);
 
+        // Convert screen → world
         Vector3 screen3 = new Vector3(virtualCursorScreen.x, virtualCursorScreen.y, camToCursorPlaneZ);
         Vector3 world = cam.ScreenToWorldPoint(screen3);
-        world.z = 0f; // ensure cursor sits on 2D plane
+        world.z = 0f;
         transform.position = world;
     }
 
-    private bool GamepadPresent()
-    {
-        return Gamepad.current != null;
-    }
+    // ─────────────────────────────────────────────
+    // Check what the cursor is hovering over
 
     private void CheckHoverTarget()
     {
         Vector2 worldPoint = transform.position;
         RaycastHit2D hit = Physics2D.Raycast(worldPoint, Vector2.zero);
 
-        Hittable newHover = null;
+        Hittable newHover = hit.collider != null ? hit.collider.GetComponent<Hittable>() : null;
 
-        if (hit.collider != null)
-            newHover = hit.collider.GetComponent<Hittable>();
-
-        // If hover target changed
         if (newHover != currentHover)
         {
             // Exit old hover
@@ -129,7 +143,9 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // Called from your input system’s Interact action
+    // ─────────────────────────────────────────────
+    // Interaction input from Input System
+
     public void OnInteract()
     {
         if (currentHover != null)
@@ -144,6 +160,6 @@ public class PlayerController : MonoBehaviour
 
     public void OnJump()
     {
-        Debug.Log("Jump with: ");
+        Debug.Log("Jump pressed");
     }
 }
