@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public abstract class Hittable : MonoBehaviour
+public abstract class Interactable : MonoBehaviour
 {
     public virtual void OnHoverEnter() { }
     public virtual void OnHoverExit() { }
